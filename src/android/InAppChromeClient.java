@@ -31,7 +31,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.GeolocationPermissions.Callback;
 
-public class InAppChromeClient extends WebChromeClient {
+public class InAppChromeClient extends VideoEnabledChromeClient {
 
     private CordovaWebView webView;
     private String LOG_TAG = "InAppChromeClient";

@@ -18,6 +18,7 @@
 */
 package org.apache.cordova.inappbrowser;
 
+import android.app.Activity;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.content.ComponentName;
@@ -25,6 +26,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.content.pm.ActivityInfo;
 import android.os.Parcelable;
 import android.provider.Browser;
 import android.content.res.Resources;
@@ -35,6 +37,7 @@ import android.graphics.PorterDuffColorFilter;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Handler;
 import android.os.Bundle;
 import android.text.InputType;
 import android.util.TypedValue;
@@ -95,6 +98,7 @@ public class InAppBrowser extends CordovaPlugin {
     private static final String EXIT_EVENT = "exit";
     private static final String LOCATION = "location";
     private static final String ZOOM = "zoom";
+    private static final String FULL_SCREEN = "fullscreen";
     private static final String HIDDEN = "hidden";
     private static final String LOAD_START_EVENT = "loadstart";
     private static final String LOAD_STOP_EVENT = "loadstop";
@@ -130,6 +134,7 @@ public class InAppBrowser extends CordovaPlugin {
     private boolean clearSessionCache = false;
     private boolean hadwareBackButton = true;
     private boolean mediaPlaybackRequiresUserGesture = false;
+    private boolean fullScreenFeature = false;
     private boolean shouldPauseInAppBrowser = false;
     private boolean useWideViewPort = true;
     private ValueCallback<Uri> mUploadCallback;
@@ -654,6 +659,10 @@ public class InAppBrowser extends CordovaPlugin {
             if (mediaPlayback != null) {
                 mediaPlaybackRequiresUserGesture = mediaPlayback.equals("yes") ? true : false;
             }
+            String fullScreen = features.get(FULL_SCREEN);
+            if (fullScreen != null) {
+                fullScreenFeature = fullScreen.equals("yes") ? true : false;
+            }
             String cache = features.get(CLEAR_ALL_CACHE);
             if (cache != null) {
                 clearAllCache = cache.equals("yes") ? true : false;
@@ -704,6 +713,8 @@ public class InAppBrowser extends CordovaPlugin {
 
         // Create dialog in new thread
         Runnable runnable = new Runnable() {
+            
+            private boolean inFullScreen = false;
             /**
              * Convert our DIP units to Pixels
              *
@@ -765,6 +776,39 @@ public class InAppBrowser extends CordovaPlugin {
                 return _close;
             }
 
+
+            private void enableFullScreen(Activity activity, Window window) {
+                inFullScreen = true;
+                WindowManager.LayoutParams attrs = window.getAttributes();
+                attrs.flags |= WindowManager.LayoutParams.FLAG_FULLSCREEN;
+                attrs.flags |= WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
+                window.setAttributes(attrs);
+                if (android.os.Build.VERSION.SDK_INT >= 14)
+                {
+                    //noinspection all
+                    int flags = View.SYSTEM_UI_FLAG_LOW_PROFILE;
+                    if (android.os.Build.VERSION.SDK_INT >= 16)
+                    {
+                        flags = View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE;
+                    }
+                    window.getDecorView().setSystemUiVisibility(flags);
+                }
+
+            }
+
+            private void disableFullScreen(Activity activity, Window window) {
+                inFullScreen = false;
+                WindowManager.LayoutParams attrs = window.getAttributes();
+                attrs.flags &= ~WindowManager.LayoutParams.FLAG_FULLSCREEN;
+                attrs.flags &= ~WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON;
+                window.setAttributes(attrs);
+                if (android.os.Build.VERSION.SDK_INT >= 14)
+                {
+                    //noinspection all
+                    window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+                }
+            }
+
             @SuppressLint("NewApi")
             public void run() {
 
@@ -774,15 +818,37 @@ public class InAppBrowser extends CordovaPlugin {
                 };
 
                 // Let's create the main dialog
-                dialog = new InAppBrowserDialog(cordova.getActivity(), android.R.style.Theme_NoTitleBar);
+                dialog = new InAppBrowserDialog(cordova.getActivity(), android.R.style.Theme_NoTitleBar_Fullscreen);
                 dialog.getWindow().getAttributes().windowAnimations = android.R.style.Animation_Dialog;
+                final View decor = dialog.getWindow().getDecorView();
+                decor.setOnSystemUiVisibilityChangeListener (new View.OnSystemUiVisibilityChangeListener() {
+                    public void onSystemUiVisibilityChange(int visibility) {
+                        new Handler().postDelayed(new Runnable() {
+                            public void run(){
+                                if (inFullScreen)
+                                {
+                                    decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE);
+                                }
+                            }
+                        }, 3000);
+                    }
+                });
+                if (fullScreenFeature)
+                {
+                    enableFullScreen(cordova.getActivity(), dialog.getWindow());
+                }
+
                 dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
                 dialog.setCancelable(true);
                 dialog.setInAppBroswer(getInAppBrowser());
 
-                // Main container layout
-                LinearLayout main = new LinearLayout(cordova.getActivity());
-                main.setOrientation(LinearLayout.VERTICAL);
+                // Main container layout 
+                RelativeLayout main = new RelativeLayout(cordova.getActivity());
+                RelativeLayout fullScreenMain = new RelativeLayout(cordova.getActivity());
+                fullScreenMain.setLayoutParams(new RelativeLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+                LinearLayout browserMain = new LinearLayout(cordova.getActivity());
+                browserMain.setOrientation(LinearLayout.VERTICAL);
+                browserMain.setLayoutParams(new RelativeLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
                 // Toolbar layout
                 RelativeLayout toolbar = new RelativeLayout(cordova.getActivity());
@@ -906,7 +972,7 @@ public class InAppBrowser extends CordovaPlugin {
                 inAppWebView.setLayoutParams(new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
                 inAppWebView.setId(Integer.valueOf(6));
                 // File Chooser Implemented ChromeClient
-                inAppWebView.setWebChromeClient(new InAppChromeClient(thatWebView) {
+                InAppChromeClient inAppChromeClient = new InAppChromeClient(thatWebView, browserMain, fullScreenMain) {
                     // For Android 5.0+
                     public boolean onShowFileChooser (WebView webView, ValueCallback<Uri[]> filePathCallback, WebChromeClient.FileChooserParams fileChooserParams)
                     {
@@ -947,7 +1013,32 @@ public class InAppBrowser extends CordovaPlugin {
                         cordova.startActivityForResult(InAppBrowser.this, Intent.createChooser(content, "Select File"), FILECHOOSER_REQUESTCODE);
                     }
 
+                };
+
+                inAppChromeClient.setOnToggledFullscreen(new VideoEnabledWebChromeClient.ToggledFullscreenCallback() {
+                    @Override
+                    public void toggledFullscreen(boolean fullscreen)
+                    {
+                        // Your code to handle the full-screen change, for example showing and hiding the title bar. Example:
+                        
+                        Activity activity = cordova.getActivity();
+                        Window window = dialog.getWindow();
+                        if (fullscreen)
+                        {
+                            enableFullScreen(activity, window);
+                            activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+                        }
+                        else
+                        {
+                            if (!fullScreenFeature)
+                            {
+                                disableFullScreen(activity, window);
+                            }
+                            activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
+                        }
+                    }
                 });
+                inAppWebView.setWebChromeClient(inAppChromeClient);
                 WebViewClient client = new InAppBrowserClient(thatWebView, edittext, beforeload);
                 inAppWebView.setWebViewClient(client);
                 WebSettings settings = inAppWebView.getSettings();
@@ -1025,13 +1116,13 @@ public class InAppBrowser extends CordovaPlugin {
                 // Don't add the toolbar if its been disabled
                 if (getShowLocationBar()) {
                     // Add our toolbar to our main view/layout
-                    main.addView(toolbar);
+                    browserMain.addView(toolbar);
                 }
 
                 // Add our webview to our main view/layout
                 RelativeLayout webViewLayout = new RelativeLayout(cordova.getActivity());
                 webViewLayout.addView(inAppWebView);
-                main.addView(webViewLayout);
+                browserMain.addView(webViewLayout);
 
                 // Don't add the footer unless it's been enabled
                 if (showFooter) {
@@ -1042,6 +1133,9 @@ public class InAppBrowser extends CordovaPlugin {
                 lp.copyFrom(dialog.getWindow().getAttributes());
                 lp.width = WindowManager.LayoutParams.MATCH_PARENT;
                 lp.height = WindowManager.LayoutParams.MATCH_PARENT;
+
+                main.addView(browserMain);
+                main.addView(fullScreenMain);
 
                 dialog.setContentView(main);
                 dialog.show();

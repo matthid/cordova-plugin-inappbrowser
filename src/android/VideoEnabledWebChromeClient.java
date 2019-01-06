@@ -134,9 +134,16 @@ public class VideoEnabledWebChromeClient extends WebChromeClient implements Medi
             this.videoViewCallback = callback;
 
             // Hide the non-video view, add the video view, and show it
-            activityNonVideoView.setVisibility(View.INVISIBLE);
-            activityVideoView.addView(videoViewContainer, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            activityVideoView.setVisibility(View.VISIBLE);
+            if (activityNonVideoView != null)
+            {
+                activityNonVideoView.setVisibility(View.INVISIBLE);
+            }
+
+            if (activityVideoView != null)
+            {
+                activityVideoView.addView(videoViewContainer, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                activityVideoView.setVisibility(View.VISIBLE);
+            }
 
             if (focusedChild instanceof android.widget.VideoView)
             {
@@ -201,9 +208,15 @@ public class VideoEnabledWebChromeClient extends WebChromeClient implements Medi
         if (isVideoFullscreen)
         {
             // Hide the video view, remove it, and show the non-video view
-            activityVideoView.setVisibility(View.INVISIBLE);
-            activityVideoView.removeView(videoViewContainer);
-            activityNonVideoView.setVisibility(View.VISIBLE);
+            if (activityVideoView != null)
+            {
+                activityVideoView.setVisibility(View.INVISIBLE);
+                activityVideoView.removeView(videoViewContainer);
+            }
+            
+            if (activityNonVideoView != null) {
+                activityNonVideoView.setVisibility(View.VISIBLE);
+            }
 
             // Call back (only in API level <19, because in API level 19+ with chromium webview it crashes)
             if (videoViewCallback != null && !videoViewCallback.getClass().getName().contains(".chromium."))

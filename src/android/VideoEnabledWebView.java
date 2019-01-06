@@ -1,4 +1,4 @@
-package name.cpr;
+package org.apache.cordova.inappbrowser;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
